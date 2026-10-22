@@ -1,6 +1,6 @@
 ---
 import Base from "../layouts/Base.astro";
-import { SUBJECTS, siteTagline } from "../data/subjects";
+import { SUBJECTS, SESSION_NAMES, siteTagline } from "../data/subjects";
 import manifest from "../data/papers.json";
 
 const subjectData = manifest.subjects;
@@ -16,25 +16,353 @@ const withCounts = SUBJECTS.map((s) => {
 });
 const total = withCounts.reduce((n, s) => n + s.count, 0);
 const latest = manifest.generatedAt?.slice(0, 10);
+const yearRange = [
+  ...new Set(
+    withCounts.flatMap((s) => {
+      const ys = (subjectData[s.code]?.papers ?? []).map((p) => p.y);
+      return ys.length ? ys : [];
+    })
+  ),
+].sort((a, b) => b - a);
+const paperNums = [...new Set(withCounts.flatMap((s) => Object.keys(s.paperTitles).map(Number)))].sort(
+  (a, b) => a - b
+);
+const subjectMeta = Object.fromEntries(
+  SUBJECTS.map((s) => [s.code, { name: s.name, titles: s.paperTitles }])
+);
 ---
 
 <Base title="Past papers by subject">
+  <script type="application/json" id="subject-meta">{JSON.stringify(subjectMeta)}</script>
+
   <section class="hero wrap">
     <h1>Past papers for the syllabus you actually sit.</h1>
     <p class="sub">{siteTagline}</p>
     <p class="meta">{total.toLocaleString()} links · verified against live archives · updated {latest}</p>
   </section>
 
-  <section class="wrap subject-grid">
-    {withCounts.map((s) => (
-      <a class="subject-card" href={`/subject/${s.code}/`} style={`--spine: ${s.color}`}>
-        <span class="name">{s.name}</span>
-        <span class="code">{s.code}</span>
-        <span class="stats">
-          <span><b>{s.count}</b> papers</span>
-          {s.from && <span>{s.from}–{s.to}</span>}
-        </span>
-      </a>
-    ))}
+  <!-- ===================== paper finder ===================== -->
+  <section class="wrap finder-section" id="find" aria-labelledby="find-heading">
+    <h2 class="visually-hidden" id="find-heading">Find papers</h2>
+    <form class="finder" data-finder>
+      <div class="finder-search">
+        <input
+          type="text"
+          class="finder-input"
+          data-source-query
+          placeholder="Search subjects, papers or sessions…"
+          aria-label="Search subjects, papers or sessions"
+          autocomplete="off"
+          spellcheck="false"
+        />
+        <div class="suggestions" data-suggestions hidden></div>
+      </div>
+      <div class="finder-filters">
+        <label class="f-label" for="f-subject">Subject</label>
+        <select id="f-subject" class="f-select" data-filter-subject>
+          <option value="all">All subjects</option>
+          {SUBJECTS.map((s) => <option value={s.code}>{s.name} ({s.code})</option>)}
+        </select>
+        <label class="f-label" for="f-year">Year</label>
+        <select id="f-year" class="f-select" data-filter-year>
+          <option value="all">All years</option>
+          {yearRange.map((y) => <option value={y}>{y}</option>)}
+        </select>
+        <label class="f-label" for="f-session">Session</label>
+        <select id="f-session" class="f-select" data-filter-session>
+          <option value="all">All sessions</option>
+          {Object.entries(SESSION_NAMES).map(([k, v]) => <option value={k}>{v}</option>)}
+        </select>
+        <label class="f-label" for="f-paper">Paper</label>
+        <select id="f-paper" class="f-select" data-filter-paper>
+          <option value="all">All papers</option>
+          {paperNums.map((p) => <option value={p}>Paper {p}</option>)}
+        </select>
+        <button class="f-submit" type="submit">Find papers</button>
+      </div>
+    </form>
+    <div class="finder-results" data-results aria-live="polite">
+      <div class="skeletons" data-skeletons>
+        <div class="skeleton"></div><div class="skeleton"></div><div class="skeleton"></div>
+      </div>
+      <p class="finder-hint" data-hint hidden>
+        Pick a subject, year or session above — matching papers appear here, every link a
+        real archived file.
+      </p>
+      <ul class="result-list" data-result-list hidden></ul>
+      <div class="finder-empty" data-empty hidden>
+        <p>No papers match those filters. Try another year or session.</p>
+        <button class="reset-link" data-reset type="button">Clear all filters</button>
+      </div>
+      <button class="show-more" data-show-more type="button" hidden>Show more papers</button>
+    </div>
+  </section>
+
+  <!-- ===================== subject explorer ===================== -->
+  <section class="wrap subject-explorer" id="subjects" aria-labelledby="subjects-heading">
+    <h2 class="grid-heading" id="subjects-heading">Browse by subject</h2>
+    <div class="subject-grid">
+      {withCounts.map((s) => (
+        <a class="subject-card" href={`/subject/${s.code}/`} style={`--spine: ${s.color}`}>
+          <span class="name">{s.name}</span>
+          <span class="code">{s.code} · Cambridge AS &amp; A Level</span>
+          {s.from && <span class="stats"><span><b>{s.count}</b> papers</span><span>{s.from}–{s.to}</span></span>}
+        </a>
+      ))}
+    </div>
   </section>
 </Base>
+
+<script>
+  const SESS: Record<string, string> = {
+    m: "February / March",
+    s: "May / June",
+    w: "October / November",
+  };
+  const BASE = "https://papers.xtremepape.rs/CAIE/AS%20and%20A%20Level/";
+  const PAGE_SIZE = 24;
+
+  const meta = JSON.parse(
+    document.querySelector<HTMLScriptElement>("#subject-meta")!.textContent!
+  ) as Record<string, { name: string; titles: Record<number, string> }>;
+
+  const form = document.querySelector<HTMLFormElement>("[data-finder]")!;
+  const queryInput = document.querySelector<HTMLInputElement>("[data-source-query]")!;
+  const suggestionsEl = document.querySelector<HTMLElement>("[data-suggestions]")!;
+  const subjectSel = document.querySelector<HTMLSelectElement>("[data-filter-subject]")!;
+  const yearSel = document.querySelector<HTMLSelectElement>("[data-filter-year]")!;
+  const sessionSel = document.querySelector<HTMLSelectElement>("[data-filter-session]")!;
+  const paperSel = document.querySelector<HTMLSelectElement>("[data-filter-paper]")!;
+  const resultUl = document.querySelector<HTMLUListElement>("[data-result-list]")!;
+  const hintEl = document.querySelector<HTMLElement>("[data-hint]")!;
+  const emptyEl = document.querySelector<HTMLElement>("[data-empty]")!;
+  const skeletonEl = document.querySelector<HTMLElement>("[data-skeletons]")!;
+  const showMoreBtn = document.querySelector<HTMLButtonElement>("[data-show-more]")!;
+
+  type Variant = [code: string, y: number, s: string, p: number, v: number, qm: number, u?: Record<number, string>];
+  let index: {
+    generatedAt?: string;
+    subjects: Record<string, { folder?: string }>;
+    papers: Variant[];
+  } | null = null;
+
+  const load = fetch("/papers-index.json")
+    .then((r) => r.json())
+    .then((json) => {
+      index = json;
+      skeletonEl.hidden = true;
+    })
+    .catch(() => {
+      skeletonEl.hidden = true;
+      hintEl.hidden = false;
+      hintEl.textContent = "Could not load the paper catalog. Refresh to retry.";
+    });
+
+  const folderPath = (f: string) => encodeURIComponent(f).replace(/%28/g, "(").replace(/%29/g, ")");
+  const urlFor = (code: string, kind: "qp" | "ms", y: number, s: string, pv: string) => {
+    const folder = index?.subjects[code]?.folder;
+    if (!folder) return null;
+    return `${BASE}${folderPath(folder)}/${code}_${s}${String(y).slice(2)}_${kind}_${pv}.pdf`;
+  };
+
+  let shown = PAGE_SIZE;
+
+  function matches(): Variant[] {
+    if (!index) return [];
+    const subj = subjectSel.value;
+    const y = yearSel.value;
+    const s = sessionSel.value;
+    const p = paperSel.value;
+    return index.papers.filter(
+      (r) =>
+        (subj === "all" || r[0] === subj) &&
+        (y === "all" || String(r[1]) === y) &&
+        (s === "all" || r[2] === s) &&
+        (p === "all" || String(r[3]) === p)
+    );
+  }
+
+  function render() {
+    if (!index) return;
+    const rows = matches();
+    resultUl.innerHTML = "";
+    resultUl.hidden = rows.length === 0;
+    emptyEl.hidden = rows.length !== 0;
+    hintEl.hidden = rows.length > 0;
+    if (!rows.length) {
+      showMoreBtn.hidden = true;
+      return;
+    }
+    for (const r of rows.slice(0, shown)) {
+      const [code, y, s, p, v, qm, override] = r;
+      const li = document.createElement("li");
+      li.className = "result-item";
+
+      const hasQp = (qm & 1) === 1 || !!override?.[0];
+      const hasMs = (qm & 2) === 2 || !!override?.[1];
+      const qpUrl = override?.[0] ?? urlFor(code, "qp", y, s, `${p}${v}`);
+      const msUrl = hasMs ? override?.[1] ?? urlFor(code, "ms", y, s, `${p}${v}`) : null;
+
+      const title = meta[code]?.titles?.[p] ?? "";
+      const actions = [
+        hasQp && qpUrl
+          ? `<a class="doc-link pdf" href="${qpUrl}" target="_blank" rel="noopener"><span class="tag">QP</span>Question paper</a>`
+          : "",
+        msUrl
+          ? `<a class="doc-link pdf" href="${msUrl}" target="_blank" rel="noopener"><span class="tag">MS</span>Mark scheme</a>`
+          : hasQp
+            ? `<span class="ms-missing">mark scheme not yet published</span>`
+            : "",
+      ].join("");
+
+      li.innerHTML = `
+        <div class="result-head">
+          <span class="r-subj">${meta[code]?.name ?? code}</span>
+          <span class="r-id mono">${code} · Paper ${p}${title ? " · " + title : ""}</span>
+          <span class="r-sess">${SESS[s]} ${y} · Variant ${v}</span>
+        </div>
+        <div class="result-actions">${actions}</div>`;
+      resultUl.appendChild(li);
+    }
+    const remaining = rows.length - shown;
+    showMoreBtn.hidden = remaining <= 0;
+    showMoreBtn.textContent = `Show more papers (${remaining} remaining)`;
+  }
+
+  function runFind() {
+    shown = PAGE_SIZE;
+    render();
+  }
+
+  form.addEventListener("submit", (e) => {
+    e.preventDefault();
+    runFind();
+  });
+  for (const sel of [subjectSel, yearSel, sessionSel, paperSel]) {
+    sel.addEventListener("change", runFind);
+  }
+  showMoreBtn.addEventListener("click", () => {
+    shown += PAGE_SIZE;
+    render();
+  });
+
+  document.querySelector<HTMLButtonElement>("[data-reset]")!.addEventListener("click", () => {
+    subjectSel.value = "all";
+    yearSel.value = "all";
+    sessionSel.value = "all";
+    paperSel.value = "all";
+    runFind();
+  });
+
+  // ---- suggestions ----
+  let sugOpen = false;
+  function closeSuggestions() {
+    suggestionsEl.hidden = true;
+    suggestionsEl.innerHTML = "";
+    sugOpen = false;
+  }
+  const allSubjects = Object.entries(meta).map(([code, m]) => ({ code, name: m.name }));
+
+  // parse "9702 s25 42", "physics 2025 paper 4" style input; true when recognised
+  function applyQueryParse(text: string): boolean {
+    const t = text.trim().toLowerCase();
+    const code = t.match(/^(9\d\d\d|96\d\d|99\d\d)/)?.[0];
+    if (!code || !allSubjects.some((s) => s.code === code)) return false;
+    const rest = t.slice(code.length);
+    let hit = false;
+
+    // paper-code style session+year: s25 / w24 / m26
+    const pat = rest.match(/\b([msw])(\d{2})\b/);
+    if (pat) {
+      subjectSel.value = code;
+      sessionSel.value = pat[1];
+      yearSel.value = `20${pat[2]}`;
+      hit = true;
+    } else {
+      // word style: may/june, oct/nov, feb/march + 2025
+      const sy = rest.match(/\b(may|june|jun|october|oct|november|nov|february|feb|march)\b/);
+      const yy = rest.match(/\b(20\d{2})\b/);
+      if (sy) {
+        const w = sy[1];
+        sessionSel.value = /may|jun/.test(w) ? "s" : /oct|nov/.test(w) ? "w" : "m";
+        subjectSel.value = code;
+        hit = true;
+      }
+      if (yy) {
+        yearSel.value = yy[1];
+        subjectSel.value = code;
+        hit = true;
+      }
+    }
+    const pw = rest.match(/\bpaper\s*([1-7])\b/);
+    const pDigits = (rest.replace(/\b20\d{2}\b/g, "").match(/\b([1-7])\b/) || [])[1];
+    const pNum = pw?.[1] ?? pDigits;
+    if (pNum) {
+      paperSel.value = pNum;
+      subjectSel.value = code;
+      hit = true;
+    }
+    return hit;
+  }
+
+  queryInput.addEventListener("input", () => {
+    const t = queryInput.value.trim().toLowerCase();
+    if (!t) {
+      closeSuggestions();
+      return;
+    }
+    const frag = document.createDocumentFragment();
+    const hits = allSubjects
+      .filter((s) => s.name.toLowerCase().includes(t) || s.code.startsWith(t))
+      .slice(0, 5);
+    for (const s of hits) {
+      const b = document.createElement("button");
+      b.type = "button";
+      b.className = "suggestion";
+      b.innerHTML = `<b>${s.name}</b><span class="mono">${s.code}</span><span>open subject</span>`;
+      b.addEventListener("click", () => {
+        window.location.href = `/subject/${s.code}/`;
+      });
+      frag.appendChild(b);
+    }
+    if (applyQueryParse(t)) {
+      const b = document.createElement("button");
+      b.type = "button";
+      b.className = "suggestion locate";
+      b.appendChild(Object.assign(document.createElement("b"), { textContent: "Find matching papers" }));
+      const mono = document.createElement("span");
+      mono.className = "mono";
+      mono.textContent = t;
+      b.appendChild(mono);
+      b.appendChild(Object.assign(document.createElement("span"), { textContent: "search" }));
+      b.addEventListener("click", () => {
+        runFind();
+        closeSuggestions();
+      });
+      frag.appendChild(b);
+    }
+    if (frag.childNodes.length) {
+      suggestionsEl.innerHTML = "";
+      suggestionsEl.appendChild(frag);
+      suggestionsEl.hidden = false;
+      sugOpen = true;
+    } else closeSuggestions();
+  });
+  queryInput.addEventListener("keydown", (e) => {
+    if (e.key === "Escape") closeSuggestions();
+  });
+  document.addEventListener("click", (e) => {
+    if (sugOpen && !(e.target as HTMLElement).closest(".finder-search")) closeSuggestions();
+  });
+
+  load.then(() => {
+    if (
+      subjectSel.value !== "all" ||
+      yearSel.value !== "all" ||
+      sessionSel.value !== "all" ||
+      paperSel.value !== "all"
+    ) {
+      render();
+    }
+  });
+</script>

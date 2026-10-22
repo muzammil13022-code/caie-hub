@@ -5,9 +5,8 @@ import { siteTitle } from "../data/subjects";
 interface Props {
   title: string;
   spine?: string;
-  showBack?: boolean;
 }
-const { title, spine = "#f5c64f", showBack = false } = Astro.props;
+const { title, spine = "#f5c64f" } = Astro.props;
 ---
 
 <!doctype html>
@@ -20,27 +19,49 @@ const { title, spine = "#f5c64f", showBack = false } = Astro.props;
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
   </head>
   <body style={`--spine: ${spine}`}>
-    <header class="site-header">
+    <a class="skip-link" href="#main">Skip to content</a>
+    <header class="site-header" data-site-header>
       <div class="wrap inner">
         <a class="wordmark" href="/"><span class="dot"></span>{siteTitle}</a>
         <span class="kicker">CAIE AS &amp; A Level · current syllabus only</span>
-        {showBack && <a class="back" href="/">← All subjects</a>}
+        <nav class="site-nav" aria-label="Primary">
+          <a href="/#subjects">Subjects</a>
+          <a href="/#find">Find papers</a>
+        </nav>
       </div>
     </header>
 
-    <main>
+    <main id="main">
       <slot />
     </main>
 
     <footer class="site-footer">
-      <div class="wrap inner">
-        <span>
-          Links open externally on XtremePapers, Exam-Mate, Rocket Revise and Cambridge
-          International — nothing is hosted here.
-        </span>
-        <span><a href="/">All subjects</a></span>
+      <div class="wrap">
+        <nav class="footer-nav" aria-label="Subjects">
+          <a href="/">All subjects</a>
+          <a href="/subject/9702/">Physics</a>
+          <a href="/subject/9701/">Chemistry</a>
+          <a href="/subject/9709/">Maths</a>
+          <a href="/subject/9700/">Biology</a>
+          <a href="/subject/9618/">CS</a>
+          <a href="/subject/9706/">Accounting</a>
+        </nav>
+        <div class="inner">
+          <span>
+            Links open externally on XtremePapers, Exam-Mate, Rocket Revise and Cambridge
+            International — nothing is hosted here.
+          </span>
+          <span><a href="/">Top ↑</a></span>
+        </div>
       </div>
     </footer>
+
+    <script>
+      const header = document.querySelector<HTMLElement>("[data-site-header]");
+      const setScrolled = () => header?.classList.toggle("scrolled", window.scrollY > 8);
+      setScrolled();
+      window.addEventListener("scroll", setScrolled, { passive: true });
+    </script>
   </body>
 </html>
 

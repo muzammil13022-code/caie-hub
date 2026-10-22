@@ -34,9 +34,13 @@ const officialUrl = `https://www.cambridgeinternational.org/programmes-and-quali
 const to: number = yearsDesc[0] ?? subject.syllabusStart;
 ---
 
-<Base title={`${subject.name} ${subject.code}`} spine={subject.color} showBack>
+<Base title={`${subject.name} ${subject.code}`} spine={subject.color}>
   <section class="subject-head wrap">
-    <div class="code-tag"><span>{subject.code}</span><span>·</span><span>{subject.name}</span></div>
+    <nav class="breadcrumb" aria-label="Breadcrumb">
+      <a href="/">Home</a> <span class="sep">/</span> <a href="/#subjects">Subjects</a>
+      <span class="sep">/</span> <span aria-current="page">{subject.name}</span>
+    </nav>
+    <div class="code-tag"><span>{subject.code}</span><span>·</span><span>Cambridge International AS &amp; A Level</span></div>
     <h1>{subject.name}</h1>
     <p class="syll-note">Papers for the current syllabus version only — <b>{subject.syllabusStart}–{to}</b> sessions. Question papers and mark schemes open as PDFs.</p>
     <div class="tabs" role="tablist" aria-label="Sections">
@@ -59,6 +63,15 @@ const to: number = yearsDesc[0] ?? subject.syllabusStart;
           <option value="all">All papers</option>
           {paperNums.map((p) => <option value={p}>Paper {p}</option>)}
         </select>
+        <input
+          type="text"
+          class="chip text-input"
+          data-text-filter
+          placeholder="Search code, variant or paper…"
+          aria-label="Search papers by code, variant or paper number"
+          autocomplete="off"
+          spellcheck="false"
+        />
         <span class="chip-label" style="margin-left:auto; font-size:12px">{papers.length} links</span>
       </div>
 
@@ -85,6 +98,7 @@ const to: number = yearsDesc[0] ?? subject.syllabusStart;
                       <td style="text-align:right; white-space:nowrap">
                         {docs.qp && <a class="doc-link pdf" href={docs.qp} target="_blank" rel="noopener"><span class="tag">QP</span>Question paper</a>}
                         {docs.ms && <a class="doc-link pdf" href={docs.ms} target="_blank" rel="noopener"><span class="tag">MS</span>Mark scheme</a>}
+                        {docs.qp && !docs.ms && <span class="ms-missing">no MS yet</span>}
                       </td>
                     </tr>
                   ))}
@@ -94,7 +108,10 @@ const to: number = yearsDesc[0] ?? subject.syllabusStart;
           </div>
         ))}
       </div>
-      <p class="no-results" data-noresults>No papers match those filters for this syllabus window.</p>
+      <p class="no-results" data-noresults>
+        No papers match those filters. Try another year or session.
+        <button class="reset-link" data-clear-filters type="button">Clear all filters</button>
+      </p>
 
       {xtpFolder && (
         <div class="alt-links">
@@ -140,37 +157,59 @@ const to: number = yearsDesc[0] ?? subject.syllabusStart;
       tabs.forEach((t) => t.setAttribute("aria-selected", String(t === tab)));
       panels.forEach((p, j) => p.classList.toggle("active", j === i));
     })
-  );
-
-  // ---- filters ----
+  );  // ---- filters ----
   const sessionChips = [...document.querySelectorAll<HTMLButtonElement>("[data-session]")];
   const paperSelect = document.querySelector<HTMLSelectElement>("[data-paper]");
+  const textInput = document.querySelector<HTMLInputElement>("[data-text-filter]");
   const rows = [...document.querySelectorAll<HTMLElement>("[data-paper-row]")];
   const sessionBlocks = [...document.querySelectorAll<HTMLElement>("[data-session-block]")];
   const noResults = document.querySelector<HTMLElement>("[data-noresults]");
   let activeSession = "all";
   let activePaper = "all";
+  let activeQuery = "";
+
+  const searchable = new WeakMap<HTMLElement, string>();
+  for (const row of rows) {
+    searchable.set(row, (row.textContent ?? "").toLowerCase());
+  }
 
   function applyFilter() {
+    const tokens = activeQuery.split(/\s+/).filter(Boolean);
     let visible = 0;
     for (const block of sessionBlocks) {
       const blockSession = block.dataset.sessionBlock;
       let blockRows = 0;
       for (const row of block.querySelectorAll<HTMLElement>("[data-paper-row]")) {
+        const text = searchable.get(row) ?? "";
+        const tokensOk = tokens.every((t) => text.includes(t));
         const show =
           (activeSession === "all" || blockSession === activeSession) &&
-          (activePaper === "all" || row.dataset.paperRow === activePaper);
+          (activePaper === "all" || row.dataset.paperRow === activePaper) &&
+          (!tokens.length || tokensOk);
         row.style.display = show ? "" : "none";
         if (show) { blockRows++; visible++; }
       }
       block.style.display = blockRows ? "" : "none";
     }
     for (const [yEl] of document.querySelectorAll<HTMLElement>(".year-group").entries()) {
-      const has = yEl.querySelector('[data-session-block][style=""] , [data-session-block]:not([style])');
+      const has = yEl.querySelector('[data-session-block][style=""], [data-session-block]:not([style])');
       yEl.style.display = has ? "" : "none";
     }
     if (noResults) noResults.classList.toggle("show", visible === 0);
   }
+
+  function clearFilters() {
+    activeSession = "all";
+    activePaper = "all";
+    activeQuery = "";
+    sessionChips.forEach((c) => c.setAttribute("aria-pressed", String(c.dataset.session === "all")));
+    if (paperSelect) paperSelect.value = "all";
+    if (textInput) textInput.value = "";
+    applyFilter();
+  }
+  document
+    .querySelector<HTMLButtonElement>("[data-clear-filters]")
+    ?.addEventListener("click", clearFilters);
 
   sessionChips.forEach((chip) =>
     chip.addEventListener("click", () => {
@@ -182,5 +221,13 @@ const to: number = yearsDesc[0] ?? subject.syllabusStart;
   paperSelect?.addEventListener("change", () => {
     activePaper = paperSelect.value || "all";
     applyFilter();
+  });
+  let textTimer: ReturnType<typeof setTimeout> | undefined;
+  textInput?.addEventListener("input", () => {
+    clearTimeout(textTimer);
+    textTimer = setTimeout(() => {
+      activeQuery = textInput.value.toLowerCase().trim();
+      applyFilter();
+    }, 120);
   });
 </script>
