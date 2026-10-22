@@ -1,0 +1,49 @@
+---
+import "../styles/global.css";
+import { siteTitle } from "../data/subjects";
+
+interface Props {
+  title: string;
+  spine?: string;
+  showBack?: boolean;
+}
+const { title, spine = "#f5c64f", showBack = false } = Astro.props;
+---
+
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>{title} · {siteTitle}</title>
+    <meta name="description" content="CAIE AS & A Level past papers — current syllabus only. Direct links to question papers and mark schemes." />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+  </head>
+  <body style={`--spine: ${spine}`}>
+    <header class="site-header">
+      <div class="wrap inner">
+        <a class="wordmark" href="/"><span class="dot"></span>{siteTitle}</a>
+        <span class="kicker">CAIE AS &amp; A Level · current syllabus only</span>
+        {showBack && <a class="back" href="/">← All subjects</a>}
+      </div>
+    </header>
+
+    <main>
+      <slot />
+    </main>
+
+    <footer class="site-footer">
+      <div class="wrap inner">
+        <span>
+          Links open externally on XtremePapers, Exam-Mate, Rocket Revise and Cambridge
+          International — nothing is hosted here.
+        </span>
+        <span><a href="/">All subjects</a></span>
+      </div>
+    </footer>
+  </body>
+</html>
+
+<style>
+  main { min-height: calc(100vh - 220px); }
+</style>

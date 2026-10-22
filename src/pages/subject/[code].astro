@@ -1,0 +1,186 @@
+---
+import Base from "../../layouts/Base.astro";
+import { SUBJECTS, SESSION_NAMES } from "../../data/subjects";
+import manifest from "../../data/papers.json";
+
+export function getStaticPaths() {
+  return SUBJECTS.map((s) => ({ params: { code: s.code } }));
+}
+
+const { code } = Astro.params;
+const subject = SUBJECTS.find((s) => s.code === code)!;
+const data = (manifest.subjects as any)[code] ?? { papers: [], topicalPapers: {}, rocketSubject: null, examMateUrl: null, xtpFolder: null };
+const papers: Array<{ y: number; s: string; p: number; v: number; k: "qp" | "ms"; url: string }> = data.papers ?? [];
+
+// group: year -> session -> paper -> variants
+const byYear = new Map<number, Map<string, Map<number, Map<number, { qp?: string; ms?: string }>>>>();
+for (const p of papers) {
+  if (!byYear.has(p.y)) byYear.set(p.y, new Map());
+  const bySession = byYear.get(p.y)!;
+  if (!bySession.has(p.s)) bySession.set(p.s, new Map());
+  const byPaper = bySession.get(p.s)!;
+  if (!byPaper.has(p.p)) byPaper.set(p.p, new Map());
+  const byVariant = byPaper.get(p.p)!;
+  if (!byVariant.has(p.v)) byVariant.set(p.v, {});
+  byVariant.get(p.v)![p.k] = p.url;
+}
+const yearsDesc = [...byYear.keys()].sort((a, b) => b - a);
+const paperNums = [...new Set(papers.map((p) => p.p))].sort((a, b) => a - b);
+const sessionOrder = ["s", "w", "m"];
+
+const examMateUrl: string | null = data.examMateUrl ?? null;
+const xtpFolder: string | null = data.xtpFolder ?? null;
+const officialUrl = `https://www.cambridgeinternational.org/programmes-and-qualifications/${subject.officialSlug}/`;
+const to: number = yearsDesc[0] ?? subject.syllabusStart;
+---
+
+<Base title={`${subject.name} ${subject.code}`} spine={subject.color} showBack>
+  <section class="subject-head wrap">
+    <div class="code-tag"><span>{subject.code}</span><span>·</span><span>{subject.name}</span></div>
+    <h1>{subject.name}</h1>
+    <p class="syll-note">Papers for the current syllabus version only — <b>{subject.syllabusStart}–{to}</b> sessions. Question papers and mark schemes open as PDFs.</p>
+    <div class="tabs" role="tablist" aria-label="Sections">
+      <button class="tab-btn" role="tab" aria-selected="true" aria-controls="panel-papers" id="tab-papers">Past papers</button>
+      <button class="tab-btn" role="tab" aria-selected="false" aria-controls="panel-resources" id="tab-resources">Resources</button>
+    </div>
+  </section>
+
+  <div class="wrap">
+    <!-- ===================== PAST PAPERS ===================== -->
+    <section class="tab-panel active" id="panel-papers" role="tabpanel" aria-labelledby="tab-papers">
+      <div class="filters" data-filters>
+        <span class="chip-label">Session</span>
+        <button class="chip" data-session="all" aria-pressed="true">All</button>
+        {sessionOrder.map((s) => (
+          <button class="chip" data-session={s} aria-pressed="false">{SESSION_NAMES[s]?.split(" / ")[0]}</button>
+        ))}
+        <span class="chip-label" style="margin-left:10px">Paper</span>
+        <select class="chip" data-paper>
+          <option value="all">All papers</option>
+          {paperNums.map((p) => <option value={p}>Paper {p}</option>)}
+        </select>
+        <span class="chip-label" style="margin-left:auto; font-size:12px">{papers.length} links</span>
+      </div>
+
+      <div data-paper-list>
+        {yearsDesc.map((year) => (
+          <div class="year-group">
+            <p class="year-title">{year}</p>
+            {sessionOrder.filter((s) => byYear.get(year)!.has(s)).map((session) => (
+              <div class="psession" data-session-block={session}>
+                <p class="session-name">{SESSION_NAMES[session]}</p>
+                <table class="paper-table">
+                  {[...byYear.get(year)!.get(session)!.entries()]
+                    .sort((a, b) => a[0] - b[0])
+                    .flatMap(([pp, paperMap]) =>
+                      [...paperMap.entries()].sort((a, b) => a[0] - b[0]).map(([v, docs]) => ({ pp, v, docs }))
+                    )
+                    .map(({ pp, v, docs }) => (
+                    <tr data-paper-row={pp}>
+                      <td class="v-variant">P{pp} · v{v}</td>
+                      <td class="p-name">
+                        {subject.paperTitles[pp] ?? `Paper ${pp}`}
+                        <span class="mono">{subject.code}_{session}{String(year).slice(2)}_{String(pp)}{v}</span>
+                      </td>
+                      <td style="text-align:right; white-space:nowrap">
+                        {docs.qp && <a class="doc-link pdf" href={docs.qp} target="_blank" rel="noopener"><span class="tag">QP</span>Question paper</a>}
+                        {docs.ms && <a class="doc-link pdf" href={docs.ms} target="_blank" rel="noopener"><span class="tag">MS</span>Mark scheme</a>}
+                      </td>
+                    </tr>
+                  ))}
+                </table>
+              </div>
+            ))}
+          </div>
+        ))}
+      </div>
+      <p class="no-results" data-noresults>No papers match those filters for this syllabus window.</p>
+
+      {xtpFolder && (
+        <div class="alt-links">
+          <a class="pill-link" href={xtpFolder} target="_blank" rel="noopener">Full archive on XtremePapers</a>
+          {examMateUrl && <a class="pill-link" href={examMateUrl} target="_blank" rel="noopener">Browse on Exam-Mate</a>}
+        </div>
+      )}
+    </section>
+
+    <!-- ===================== RESOURCES ===================== -->
+    <section class="tab-panel" id="panel-resources" role="tabpanel" aria-labelledby="tab-resources">
+      <div class="resource-list">
+        <a class="resource-link" href={officialUrl} target="_blank" rel="noopener">
+          <span class="r-label">Official syllabus page</span>
+          <span class="r-desc">Cambridge International — syllabus PDFs, specimen papers and past papers for {subject.code}.</span>
+          <span class="tag">cambridgeinternational.org</span>
+        </a>
+        {examMateUrl && (
+          <a class="resource-link" href={examMateUrl} target="_blank" rel="noopener">
+            <span class="r-label">Exam-Mate syllabus page</span>
+            <span class="r-desc">Yearly past papers, examiner reports and practice sets for {subject.code}, searchable by session.</span>
+            <span class="tag">exam-mate.com</span>
+          </a>
+        )}
+        {xtpFolder && (
+          <a class="resource-link" href={xtpFolder} target="_blank" rel="noopener">
+            <span class="r-label">Complete paper archive</span>
+            <span class="r-desc">Every file for {subject.code} on XtremePapers — including older syllabus versions and examiner reports.</span>
+            <span class="tag">xtremepape.rs</span>
+          </a>
+        )}
+      </div>
+    </section>
+  </div>
+</Base>
+
+<script>
+  // ---- tabs ----
+  const tabs = [...document.querySelectorAll<HTMLButtonElement>(".tab-btn")];
+  const panels = [...document.querySelectorAll<HTMLElement>(".tab-panel")];
+  tabs.forEach((tab, i) =>
+    tab.addEventListener("click", () => {
+      tabs.forEach((t) => t.setAttribute("aria-selected", String(t === tab)));
+      panels.forEach((p, j) => p.classList.toggle("active", j === i));
+    })
+  );
+
+  // ---- filters ----
+  const sessionChips = [...document.querySelectorAll<HTMLButtonElement>("[data-session]")];
+  const paperSelect = document.querySelector<HTMLSelectElement>("[data-paper]");
+  const rows = [...document.querySelectorAll<HTMLElement>("[data-paper-row]")];
+  const sessionBlocks = [...document.querySelectorAll<HTMLElement>("[data-session-block]")];
+  const noResults = document.querySelector<HTMLElement>("[data-noresults]");
+  let activeSession = "all";
+  let activePaper = "all";
+
+  function applyFilter() {
+    let visible = 0;
+    for (const block of sessionBlocks) {
+      const blockSession = block.dataset.sessionBlock;
+      let blockRows = 0;
+      for (const row of block.querySelectorAll<HTMLElement>("[data-paper-row]")) {
+        const show =
+          (activeSession === "all" || blockSession === activeSession) &&
+          (activePaper === "all" || row.dataset.paperRow === activePaper);
+        row.style.display = show ? "" : "none";
+        if (show) { blockRows++; visible++; }
+      }
+      block.style.display = blockRows ? "" : "none";
+    }
+    for (const [yEl] of document.querySelectorAll<HTMLElement>(".year-group").entries()) {
+      const has = yEl.querySelector('[data-session-block][style=""] , [data-session-block]:not([style])');
+      yEl.style.display = has ? "" : "none";
+    }
+    if (noResults) noResults.classList.toggle("show", visible === 0);
+  }
+
+  sessionChips.forEach((chip) =>
+    chip.addEventListener("click", () => {
+      activeSession = chip.dataset.session || "all";
+      sessionChips.forEach((c) => c.setAttribute("aria-pressed", String(c === chip)));
+      applyFilter();
+    })
+  );
+  paperSelect?.addEventListener("change", () => {
+    activePaper = paperSelect.value || "all";
+    applyFilter();
+  });
+</script>

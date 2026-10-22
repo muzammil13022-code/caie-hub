@@ -1,0 +1,40 @@
+---
+import Base from "../layouts/Base.astro";
+import { SUBJECTS, siteTagline } from "../data/subjects";
+import manifest from "../data/papers.json";
+
+const subjectData = manifest.subjects;
+const withCounts = SUBJECTS.map((s) => {
+  const papers = subjectData[s.code]?.papers ?? [];
+  const years = papers.map((p) => p.y);
+  return {
+    ...s,
+    count: papers.length,
+    from: years.length ? Math.min(...years) : null,
+    to: years.length ? Math.max(...years) : null,
+  };
+});
+const total = withCounts.reduce((n, s) => n + s.count, 0);
+const latest = manifest.generatedAt?.slice(0, 10);
+---
+
+<Base title="Past papers by subject">
+  <section class="hero wrap">
+    <h1>Past papers for the syllabus you actually sit.</h1>
+    <p class="sub">{siteTagline}</p>
+    <p class="meta">{total.toLocaleString()} links · verified against live archives · updated {latest}</p>
+  </section>
+
+  <section class="wrap subject-grid">
+    {withCounts.map((s) => (
+      <a class="subject-card" href={`/subject/${s.code}/`} style={`--spine: ${s.color}`}>
+        <span class="name">{s.name}</span>
+        <span class="code">{s.code}</span>
+        <span class="stats">
+          <span><b>{s.count}</b> papers</span>
+          {s.from && <span>{s.from}–{s.to}</span>}
+        </span>
+      </a>
+    ))}
+  </section>
+</Base>
