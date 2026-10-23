@@ -7,9 +7,13 @@ const subjectData = manifest.subjects;
 const withCounts = SUBJECTS.map((s) => {
   const papers = subjectData[s.code]?.papers ?? [];
   const years = papers.map((p) => p.y);
+  // variant rows (one per unique y/s/p/v) keep the progress denominator
+  // identical to the one shown on the subject page
+  const variants = new Set(papers.map((p) => `${p.y}${p.s}${p.p}${p.v}`));
   return {
     ...s,
     count: papers.length,
+    variants: variants.size,
     from: years.length ? Math.min(...years) : null,
     to: years.length ? Math.max(...years) : null,
   };
@@ -27,15 +31,63 @@ const latest = manifest.generatedAt?.slice(0, 10);
 
   <!-- ===================== subject explorer ===================== -->
   <section class="wrap subject-explorer" id="subjects" aria-labelledby="subjects-heading">
-    <h2 class="grid-heading" id="subjects-heading">Browse by subject</h2>
+    <div class="grid-head-row">
+      <h2 class="grid-heading" id="subjects-heading">Browse by subject</h2>
+      <a class="grid-edit" href="/choose/" data-edit-link hidden>Edit subjects ✎</a>
+    </div>
+    <p class="grid-note" data-grid-note hidden></p>
     <div class="subject-grid">
-      {withCounts.map((s) => (
-        <a class="subject-card" href={`/subject/${s.code}/`} style={`--spine: ${s.color}`}>
+      {withCounts.map((s) => (          <a class="subject-card" href={`/subject/${s.code}/`} style={`--spine: ${s.color}`} data-code={s.code} data-count={s.variants}>
           <span class="name">{s.name}</span>
           <span class="code">{s.code} · Cambridge AS &amp; A Level</span>
           {s.from && <span class="stats"><span><b>{s.count}</b> papers</span><span>{s.from}–{s.to}</span></span>}
+          <span class="card-progress">
+            <span class="card-progress-bar" role="img" aria-label={`Progress through ${s.name}`}>
+              <span class="card-progress-fill" data-card-fill style="width:0%"></span>
+            </span>
+            <span class="card-progress-num" data-card-num>0 done</span>
+          </span>
         </a>
       ))}
     </div>
   </section>
 </Base>
+
+<script>
+  import { KEYS, loadSet } from "../scripts/store";
+
+  const cards = [...document.querySelectorAll<HTMLElement>(".subject-card")];
+  const editLink = document.querySelector<HTMLAnchorElement>("[data-edit-link]")!;
+  const note = document.querySelector<HTMLElement>("[data-grid-note]")!;
+
+  const done = loadSet(KEYS.done);
+  const subjectsDone = new Map<string, number>();
+  for (const id of done) {
+    const code = id.split("_")[0];
+    subjectsDone.set(code, (subjectsDone.get(code) ?? 0) + 1);
+  }
+  for (const card of cards) {
+    const code = card.dataset.code!;
+    const total = Number(card.dataset.count ?? 0);
+    const count = subjectsDone.get(code) ?? 0;
+    const pct = total ? Math.round((count / total) * 100) : 0;
+    card.querySelector<HTMLElement>("[data-card-fill]")!.style.width = `${pct}%`;
+    card.querySelector<HTMLElement>("[data-card-num]")!.textContent = `${count}/${total} done · ${pct}%`;
+  }
+
+  // Respect chosen subjects (from /choose). With none chosen, show everything.
+  let chosen = loadSet(KEYS.chosen);
+  function applyChosen() {
+    chosen = loadSet(KEYS.chosen);
+    const active = chosen.size > 0;
+    editLink.hidden = false;
+    for (const card of cards) {
+      card.style.display = !active || chosen.has(card.dataset.code!) ? "" : "none";
+    }
+    const shown = active ? cards.filter((c) => chosen.has(c.dataset.code!)).length : cards.length;
+    note.hidden = !active;
+    if (active) note.textContent = `Showing your ${shown} chosen subject${shown === 1 ? "" : "s"} — out of ${cards.length}. `;
+  }
+  applyChosen();
+  window.addEventListener("paperline:changed", () => applyChosen());
+</script>

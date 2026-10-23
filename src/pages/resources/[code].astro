@@ -1,0 +1,45 @@
+---
+import Base from "../../layouts/Base.astro";
+import { SUBJECTS, SESSION_NAMES } from "../../data/subjects";
+
+export function getStaticPaths() {
+  return SUBJECTS.map((s) => ({ params: { code: s.code } }));
+}
+
+const { code } = Astro.params;
+const subject = SUBJECTS.find((s) => s.code === code)!;
+const to = new Date().getFullYear() + 1;
+---
+
+<Base title={`${subject.name} resources`} spine={subject.color}>
+  <section class="wrap page-head">
+    <nav class="breadcrumb" aria-label="Breadcrumb">
+      <a href="/">Home</a> <span class="sep">/</span> <a href="/resources/">Resource Library</a>
+      <span class="sep">/</span> <span aria-current="page">{subject.name}</span>
+    </nav>
+    <div class="code-tag"><span>{subject.code}</span><span>·</span><span>Cambridge International AS &amp; A Level</span></div>
+    <h1>{subject.name}</h1>
+    <p class="syll-note">Papers for the current syllabus version only — <b>{subject.syllabusStart}–{to}</b> sessions.</p>
+  </section>
+
+  <section class="wrap resource-list" style="max-width:720px; padding-bottom:70px">
+    <a class="resource-link" href={`/subject/${subject.code}/`}>
+      <span class="r-label">Past papers &amp; mark schemes</span>
+      <span class="r-desc">Every session from {subject.syllabusStart} onward for the current syllabus, with progress tracking and bookmarks.</span>
+      <span class="tag">papers.paperline</span>
+    </a>
+    {Object.entries(SESSION_NAMES).map(([key, name]) => (
+      <a class="resource-link" href={`/subject/${subject.code}/`}>
+        <span class="r-label">{name}</span>
+        <span class="r-desc">Filter the subject page by the {key.toUpperCase()} session chips to see just these papers.</span>
+        <span class="tag">session · {key.toUpperCase()}</span>
+      </a>
+    ))}
+    <div class="lib-empty-card">
+      <strong>More {subject.name} resources coming soon</strong>
+      <p>
+        Textbooks, topical papers and examiner-report collections are being curated for this subject.
+      </p>
+    </div>
+  </section>
+</Base>

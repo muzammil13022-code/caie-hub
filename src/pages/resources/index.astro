@@ -1,0 +1,99 @@
+---
+import Base from "../../layouts/Base.astro";
+import { SUBJECTS } from "../../data/subjects";
+---
+
+<Base title="Resource Library" spine="#f5c64f">
+  <section class="wrap page-head">
+    <nav class="breadcrumb" aria-label="Breadcrumb">
+      <a href="/">Home</a> <span class="sep">/</span> <span aria-current="page">Resource Library</span>
+    </nav>
+    <h1>Resource Library</h1>
+    <p class="page-sub">
+      One searchable place for anything that helps revising — linking only to real, verified
+      sources. Nothing hosted here; external links always say where they lead.
+    </p>
+  </section>
+
+  <section class="wrap lib-search">
+    <input
+      type="text"
+      class="chip text-input"
+      data-lib-search
+      placeholder="Search resources…"
+      aria-label="Search resources"
+      autocomplete="off"
+      spellcheck="false"
+    />
+    <span class="chip-label" data-lib-count></span>
+  </section>
+
+  <section class="wrap lib-category" data-lib-category data-lib-category-name="Past papers">
+    <div class="lib-cat-head">
+      <h2>Past papers</h2>
+      <p>Full papers with mark schemes for the current syllabus — with progress tracking and bookmarks.</p>
+    </div>
+    <div class="lib-grid">
+      {SUBJECTS.map((s) => (
+        <article class="lib-card" data-code={s.code} data-lower={`${s.name} ${s.code}`.toLowerCase()}>
+          <a class="lib-title" href={`/subject/${s.code}/`}>{s.name} past papers ({s.code})</a>
+          <span class="lib-code">{s.code} · Cambridge AS &amp; A Level</span>
+          <p class="lib-desc">
+            Question papers and mark schemes for the currently-examinable syllabus, opening straight
+            as PDFs.
+          </p>
+          <div class="lib-meta">
+            <span class="lib-tag">papers.paperline</span>
+            <a class="lib-link" href={`/subject/${s.code}/`}>View papers</a>
+          </div>
+        </article>
+      ))}
+    </div>
+  </section>
+
+  <section class="wrap lib-category" data-lib-category data-lib-category-name="Textbooks and topical practice">
+    <div class="lib-cat-head">
+      <h2>Textbooks &amp; topical practice</h2>
+      <p>Textbooks, topic-wise question banks and next-exam resources will be added here.</p>
+    </div>
+    <div class="lib-grid">
+      <div class="lib-empty-card">
+        <strong>Coming soon</strong>
+        <p>
+          Curated textbook and topical-paper links are being collected. Until they land, each
+          subject page's <a href="/#subjects">Resources tab</a> links to Exam-Mate and the
+          XtremePapers archive.
+        </p>
+      </div>
+    </div>
+  </section>
+</Base>
+
+<script>
+  const input = document.querySelector<HTMLInputElement>("[data-lib-search]")!;
+  const categories = [...document.querySelectorAll<HTMLElement>("[data-lib-category]")];
+  const countEl = document.querySelector<HTMLElement>("[data-lib-count]")!;
+
+  function totalCards() {
+    return categories.reduce((n, c) => n + c.querySelectorAll<HTMLElement>(".lib-card").length, 0);
+  }
+
+  function applySearch() {
+    const q = input.value.toLowerCase().trim();
+    const tokens = q.split(/\s+/).filter(Boolean);
+    let visible = 0;
+    for (const cat of categories) {
+      let catVisible = 0;
+      for (const card of cat.querySelectorAll<HTMLElement>(".lib-card")) {
+        const text = card.dataset.lower ?? "";
+        const show = tokens.every((t) => text.includes(t));
+        card.style.display = show ? "" : "none";
+        if (show) { catVisible++; visible++; }
+      }
+      cat.style.display = catVisible ? "" : "none";
+    }
+    countEl.textContent = `${visible} of ${totalCards()} shown`;
+  }
+  applySearch();
+  input.addEventListener("input", applySearch);
+</script>

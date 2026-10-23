@@ -43,6 +43,13 @@ const to: number = yearsDesc[0] ?? subject.syllabusStart;
     <div class="code-tag"><span>{subject.code}</span><span>·</span><span>Cambridge International AS &amp; A Level</span></div>
     <h1>{subject.name}</h1>
     <p class="syll-note">Papers for the current syllabus version only — <b>{subject.syllabusStart}–{to}</b> sessions. Question papers and mark schemes open as PDFs.</p>
+    <div class="progress-row" data-progress hidden>
+      <span class="progress-num" data-progress-num>0 of 0 done</span>
+      <div class="progress-bar" role="img" aria-label="Progress through this subject's papers">
+        <span class="progress-fill" data-progress-fill style="width:0%"></span>
+      </div>
+      <span class="progress-pct" data-progress-pct>0%</span>
+    </div>
     <div class="tabs" role="tablist" aria-label="Sections">
       <button class="tab-btn" role="tab" aria-selected="true" aria-controls="panel-papers" id="tab-papers">Past papers</button>
       <button class="tab-btn" role="tab" aria-selected="false" aria-controls="panel-resources" id="tab-resources">Resources</button>
@@ -72,6 +79,7 @@ const to: number = yearsDesc[0] ?? subject.syllabusStart;
           autocomplete="off"
           spellcheck="false"
         />
+        <button class="chip star-chip" data-bookmarked-filter aria-pressed="false" title="Show only bookmarked papers">★ Bookmarked</button>
         <span class="chip-label" style="margin-left:auto; font-size:12px">{papers.length} links</span>
       </div>
 
@@ -89,7 +97,11 @@ const to: number = yearsDesc[0] ?? subject.syllabusStart;
                       [...paperMap.entries()].sort((a, b) => a[0] - b[0]).map(([v, docs]) => ({ pp, v, docs }))
                     )
                     .map(({ pp, v, docs }) => (
-                    <tr data-paper-row={pp}>
+                    <tr data-paper-row={pp} data-paper-id={`${subject.code}_${session}${String(year).slice(2)}_${pp}${v}`}>
+                      <td class="row-toggle-cell">
+                        <button class="row-toggle" data-done-btn aria-pressed="false" title="Mark as done" aria-label={`Mark ${subject.code}_${session}${String(year).slice(2)}_${pp}${v} as done`}>✓</button>
+                        <button class="row-toggle star" data-star-btn aria-pressed="false" title="Bookmark this paper" aria-label={`Bookmark ${subject.code}_${session}${String(year).slice(2)}_${pp}${v}`}>★</button>
+                      </td>
                       <td class="v-variant">P{pp} · v{v}</td>
                       <td class="p-name">
                         {subject.paperTitles[pp] ?? `Paper ${pp}`}
@@ -149,6 +161,8 @@ const to: number = yearsDesc[0] ?? subject.syllabusStart;
 </Base>
 
 <script>
+  import { KEYS, loadSet, toggleInSet } from "../../scripts/store";
+
   // ---- tabs ----
   const tabs = [...document.querySelectorAll<HTMLButtonElement>(".tab-btn")];
   const panels = [...document.querySelectorAll<HTMLElement>(".tab-panel")];
@@ -167,6 +181,54 @@ const to: number = yearsDesc[0] ?? subject.syllabusStart;
   let activeSession = "all";
   let activePaper = "all";
   let activeQuery = "";
+  let bookmarkedOnly = false;
+
+  const starred = loadSet(KEYS.starred);
+  const done = loadSet(KEYS.done);
+
+  // ---- done / bookmark toggles + progress ----
+  const progressWrap = document.querySelector<HTMLElement>("[data-progress]")!;
+  const progressNum = document.querySelector<HTMLElement>("[data-progress-num]")!;
+  const progressBarFill = document.querySelector<HTMLElement>("[data-progress-fill]")!;
+  const progressPct = document.querySelector<HTMLElement>("[data-progress-pct]")!;
+
+  function syncRowState(row: HTMLElement) {
+    const id = row.dataset.paperId!;
+    row.querySelector<HTMLButtonElement>("[data-done-btn]")?.setAttribute("aria-pressed", String(done.has(id)));
+    row.querySelector<HTMLButtonElement>("[data-star-btn]")?.setAttribute("aria-pressed", String(starred.has(id)));
+  }
+
+  function updateProgress() {
+    const total = rows.length;
+    const count = rows.filter((r) => done.has(r.dataset.paperId!)).length;
+    progressWrap.hidden = false;
+    progressNum.textContent = `${count} of ${total} done`;
+    const pct = total ? Math.round((count / total) * 100) : 0;
+    progressBarFill.style.width = `${pct}%`;
+    progressPct.textContent = `${pct}%`;
+  }
+
+  for (const row of rows) {
+    const id = row.dataset.paperId!;
+    row.querySelector<HTMLButtonElement>("[data-done-btn]")?.addEventListener("click", () => {
+      toggleInSet(KEYS.done, id);
+      const live = loadSet(KEYS.done);
+      done.clear();
+      live.forEach((v) => done.add(v));
+      syncRowState(row);
+      updateProgress();
+    });
+    row.querySelector<HTMLButtonElement>("[data-star-btn]")?.addEventListener("click", () => {
+      toggleInSet(KEYS.starred, id);
+      const live = loadSet(KEYS.starred);
+      starred.clear();
+      live.forEach((v) => starred.add(v));
+      syncRowState(row);
+      if (bookmarkedOnly) applyFilter();
+    });
+    syncRowState(row);
+  }
+  updateProgress();
 
   const searchable = new WeakMap<HTMLElement, string>();
   for (const row of rows) {
@@ -185,7 +247,8 @@ const to: number = yearsDesc[0] ?? subject.syllabusStart;
         const show =
           (activeSession === "all" || blockSession === activeSession) &&
           (activePaper === "all" || row.dataset.paperRow === activePaper) &&
-          (!tokens.length || tokensOk);
+          (!tokens.length || tokensOk) &&
+          (!bookmarkedOnly || starred.has(row.dataset.paperId!));
         row.style.display = show ? "" : "none";
         if (show) { blockRows++; visible++; }
       }
@@ -202,7 +265,9 @@ const to: number = yearsDesc[0] ?? subject.syllabusStart;
     activeSession = "all";
     activePaper = "all";
     activeQuery = "";
+    bookmarkedOnly = false;
     sessionChips.forEach((c) => c.setAttribute("aria-pressed", String(c.dataset.session === "all")));
+    document.querySelector<HTMLButtonElement>("[data-bookmarked-filter]")?.setAttribute("aria-pressed", "false");
     if (paperSelect) paperSelect.value = "all";
     if (textInput) textInput.value = "";
     applyFilter();
@@ -222,6 +287,14 @@ const to: number = yearsDesc[0] ?? subject.syllabusStart;
     activePaper = paperSelect.value || "all";
     applyFilter();
   });
+  document
+    .querySelector<HTMLButtonElement>("[data-bookmarked-filter]")
+    ?.addEventListener("click", (e) => {
+      const btn = e.currentTarget as HTMLButtonElement;
+      bookmarkedOnly = btn.getAttribute("aria-pressed") !== "true";
+      btn.setAttribute("aria-pressed", String(bookmarkedOnly));
+      applyFilter();
+    });
   let textTimer: ReturnType<typeof setTimeout> | undefined;
   textInput?.addEventListener("input", () => {
     clearTimeout(textTimer);

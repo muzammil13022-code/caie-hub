@@ -1,0 +1,269 @@
+---
+import Base from "../layouts/Base.astro";
+import { SUBJECTS } from "../data/subjects";
+
+const subjectNames = SUBJECTS.map((s) => ({ code: s.code, name: s.name, short: s.short }));
+const examples = ["9702 s25", "Physics June 2024", "9709 42", "Biology w23 p5"];
+---
+
+<Base title="Find your question" spine="#f5c64f">
+  <section class="wrap page-head">
+    <nav class="breadcrumb" aria-label="Breadcrumb">
+      <a href="/">Home</a> <span class="sep">/</span> <span aria-current="page">Find your question</span>
+    </nav>
+    <h1>Find your question</h1>
+    <p class="page-sub">
+      Enter a paper reference and jump straight to the matching question paper and mark scheme.
+      Formats like <code>9702 s25</code>, <code>Physics June 2024</code> or <code>9709 42</code> all work.
+    </p>
+
+    <form class="finder-bar" data-finder role="search">
+      <input
+        type="text"
+        data-ref-input
+        placeholder="e.g. 9702 s25 — Physics June 2024 — 9709 42"
+        aria-label="Search by paper reference"
+        autocomplete="off"
+        spellcheck="false"
+      />
+      <button class="btn-primary" type="submit">Search</button>
+    </form>
+
+    <div class="try-chips" data-try-chips>
+      <span class="try-label">Try:</span>
+      {examples.map((e) => <button type="button" class="chip" data-example={e}>{e}</button>)}
+    </div>
+
+    <p class="find-note">
+      Picks up subject codes, subject names, sessions (<code>m</code>/<code>s</code>/<code>w</code> + year
+      like <code>s25</code>), and paper or paper+variant numbers like <code>42</code> (paper 4, variant 2).
+    </p>
+  </section>
+
+  <section class="wrap" data-find-results aria-live="polite">
+    <p class="find-empty" data-empty hidden>Nothing matched — check the subject scope or try a wider session.</p>
+    <noscript>The paper finder needs JavaScript enabled.</noscript>
+  </section>
+</Base>
+
+<script>
+  import { SUBJECTS } from "../data/subjects";
+
+  const FOLDER_ROOT = "https://papers.xtremepape.rs/CAIE/AS%20and%20A%20Level/";
+  const encodeFolder = (f: string) => encodeURIComponent(f).replace(/%28/g, "(").replace(/%29/g, ")");
+
+  type Variant = [code: string, y: number, s: string, p: number, v: number, qm: number];
+  let folders: Record<string, { folder?: string }> = {};
+  let index: { papers: Variant[] } | null = null;
+  let loaded: Promise<void> | null = null;
+
+  function ensureIndex(): Promise<void> {
+    if (!loaded) {
+      loaded = fetch("/papers-index.json")
+        .then((r) => r.json())
+        .then((json) => {
+          index = json;
+          folders = json.subjects ?? {};
+        })
+        .catch(() => { index = null; });
+    }
+    return loaded;
+  }
+
+  const byName = new Map<string, string>();
+  for (const s of SUBJECTS) {
+    byName.set(s.name.toLowerCase(), s.code);
+    byName.set(s.short.toLowerCase(), s.code);
+    byName.set("math", "9709");
+    byName.set("econ", "9708");
+    byName.set("account", "9706");
+    byName.set("psych", "9990");
+  }
+
+  const SESS: Record<string, string> = {
+    m: "Feb / March",
+    s: "May / June",
+    w: "Oct / Nov",
+  };
+
+  interface Parsed {
+    code?: string;
+    year?: number;
+    session?: string;
+    paper?: number;
+    variant?: number;
+  }
+
+  function parseReference(text: string): Parsed {
+    const t = text.trim().toLowerCase();
+    const out: Parsed = {};
+
+    const codeMatch = t.match(/\b(96\d\d|97\d\d|99\d\d)\b/);
+    if (codeMatch) {
+      out.code = codeMatch[0];
+    } else {
+      const nameWord = t.match(/\b(mathematics|maths|math|physics|chemistry|biology|business|economics|econ|accounting|account|psychology|psych|computer\s*science|cs|it)\b/);
+      if (nameWord) out.code = byName.get(nameWord[0]);
+    }
+
+    // quick session+year token: s25 / w24 / m26
+    const quick = t.match(/\b([msw])(\d{2})\b/);
+    const hasYearWords = /\b(20\d{2}|jan|january|may|june|march|feb|february|oct|october|nov|november)\b/.test(t);
+    if (quick && !hasYearWords) {
+      out.session = quick[1];
+      out.year = 2000 + Number(quick[2]);
+    } else {
+      const month = t.match(/\b(jan|january|may|june|march|feb|february|oct|october|nov|november)\b/);
+      if (month) {
+        const w = month[0];
+        out.session = /jan/.test(w) ? "w" : /march|feb/.test(w) ? "m" : /may|june/.test(w) ? "s" : "w";
+      }
+      const year = t.match(/\b20\d{2}\b/);
+      if (year) out.year = Number(year[0]);
+    }
+
+    const pv = t.match(/\bpaper\s*([1-7])\b/) || t.match(/\bp([1-7])\b/);
+    if (pv) {
+      out.paper = Number(pv[1]);
+      const vAfter = t.slice((t.indexOf(pv[0]) + pv[0].length) || t.length).match(/\s*v?([2-9])\b/);
+      out.variant = vAfter ? Number(vAfter[1]) : undefined;
+    } else {
+      // bare two-digit "42" = paper 4 variant 2 (XtremePapers convention)
+      const cleaned = t
+        .replace(/\b(9[6-9]\d\d)\b/g, " ")
+        .replace(/\b([msw]\d{2})\b/g, " ")
+        .replace(/\b20\d{2}\b/g, " ");
+      const digits = cleaned.match(/\b([1-7])([0-9])\b/);
+      if (digits) {
+        out.paper = Number(digits[1]);
+        out.variant = Number(digits[2]);
+      } else {
+        const single = cleaned.match(/\b([1-7])\b/);
+        if (single) out.paper = Number(single[1]);
+      }
+    }
+
+    return out;
+  }
+
+  const resultsEl = document.querySelector<HTMLElement>("[data-find-results]")!;
+  const emptyEl = document.querySelector<HTMLElement>("[data-empty]")!;
+  const input = document.querySelector<HTMLInputElement>("[data-ref-input]")!;
+
+  function urlFor(code: string, kind: "qp" | "ms", y: number, s: string, pv: string): string | null {
+    const folder = folders[code]?.folder;
+    if (!folder) return null;
+    return `${FOLDER_ROOT}${encodeFolder(folder)}/${code}_${s}${String(y).slice(2)}_${kind}_${pv}.pdf`;
+  }
+
+  function render(parsed: Parsed) {
+    if (!index) return;
+    const rows = index.papers.filter(
+      ([code, y, s, p, v]) =>
+        (!parsed.code || code === parsed.code) &&
+        (!parsed.year || y === parsed.year) &&
+        (!parsed.session || s === parsed.session) &&
+        (!parsed.paper || p === parsed.paper) &&
+        (!parsed.variant || v === parsed.variant)
+    );
+    resultsEl.querySelectorAll("[data-result-list], [data-results-head]").forEach((el) => el.remove());
+
+    if (!rows.length) {
+      emptyEl.hidden = false;
+      return;
+    }
+    emptyEl.hidden = true;
+
+    const head = document.createElement("p");
+    head.className = "results-head";
+    head.setAttribute("data-results-head", "");
+    head.textContent = `${rows.length} row${rows.length === 1 ? "" : "s"} found — showing the first 60`;
+    resultsEl.appendChild(head);
+
+    const ul = document.createElement("ul");
+    ul.className = "result-list";
+    ul.setAttribute("data-result-list", "");
+    for (const [code, y, s, p, v, qm] of rows.slice(0, 60)) {
+      const li = document.createElement("li");
+      li.className = "result-item";
+      const hasQp = (qm & 1) === 1;
+      const hasMs = (qm & 2) === 2;
+      const pv = `${p}${v}`;
+      const qp = hasQp ? urlFor(code, "qp", y, s, pv) : null;
+      const ms = hasMs ? urlFor(code, "ms", y, s, pv) : null;
+
+      const refSpan = document.createElement("span");
+      refSpan.className = "r-id mono";
+      refSpan.textContent = `${code} · ${SESS[s]} ${y} · P${p} v${v}`;
+      li.appendChild(refSpan);
+
+      if (qp) {
+        const a = document.createElement("a");
+        a.className = "doc-link pdf";
+        a.href = qp;
+        a.target = "_blank";
+        a.rel = "noopener";
+        a.innerHTML = `<span class="tag">QP</span>Question paper`;
+        li.appendChild(a);
+      }
+      if (ms) {
+        const a = document.createElement("a");
+        a.className = "doc-link pdf";
+        a.href = ms;
+        a.target = "_blank";
+        a.rel = "noopener";
+        a.innerHTML = `<span class="tag">MS</span>Mark scheme`;
+        li.appendChild(a);
+      }
+      if (hasQp && !hasMs) {
+        const span = document.createElement("span");
+        span.className = "ms-missing";
+        span.textContent = "no MS yet";
+        li.appendChild(span);
+      }
+
+      const browse = document.createElement("a");
+      browse.className = "r-browse";
+      browse.href = `/subject/${code}/`;
+      browse.textContent = "browse subject ↗";
+      li.appendChild(browse);
+
+      ul.appendChild(li);
+    }
+    resultsEl.appendChild(ul);
+  }
+
+  const EMPTY_TEXT = "Nothing matched — try a wider session or check the paper number.";
+  emptyEl.textContent = EMPTY_TEXT;
+
+  async function runFind(text: string) {
+    await ensureIndex();
+    if (!index) {
+      emptyEl.hidden = false;
+      emptyEl.textContent = "Could not load the paper catalog. Refresh to retry.";
+      return;
+    }
+    emptyEl.textContent = EMPTY_TEXT;
+    render(parseReference(text));
+  }
+
+  document.querySelector<HTMLFormElement>(".finder-bar")?.addEventListener("submit", (e) => {
+    e.preventDefault();
+    runFind(input.value);
+  });
+
+  document.querySelectorAll<HTMLButtonElement>("[data-example]").forEach((chip) => {
+    chip.addEventListener("click", () => {
+      input.value = chip.dataset.example!;
+      runFind(input.value);
+    });
+  });
+
+  if (location.search) {
+    const q = new URLSearchParams(location.search).get("q");
+    if (q) {
+      input.value = q;
+      runFind(q);
+    }
+  }
+</script>

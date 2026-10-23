@@ -1,0 +1,20 @@
+---
+import Base from "../layouts/Base.astro";
+import { SUBJECTS, siteTitle } from "../data/subjects";
+
+const samples = SUBJECTS.slice(0, 6);
+---
+
+<Base title="Page not found" spine="#f5c64f">
+  <section class="wrap notfound">
+    <h1>Page not found</h1>
+    <p class="page-sub">The papers live on the subject pages — start from home, or try a popular subject below.</p>
+    <div class="choose-actions" style="justify-content:flex-start">
+      <a class="btn-primary" href="/">Back home</a>
+      <a class="btn-ghost" href="/find/">Find your question</a>
+    </div>
+    <nav class="footer-nav" aria-label="Subjects" style="padding-top:22px">
+      {samples.map((s) => <a href={`/subject/${s.code}/`}>{s.short}</a>)}
+    </nav>
+  </section>
+</Base>

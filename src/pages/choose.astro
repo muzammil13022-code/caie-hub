@@ -1,0 +1,87 @@
+---
+import Base from "../layouts/Base.astro";
+import { SUBJECTS } from "../data/subjects";
+import manifest from "../data/papers.json";
+
+const subjectData = manifest.subjects;
+const items = SUBJECTS.map((s) => {
+  const papers = (subjectData[s.code]?.papers ?? []) as Array<{ y: number }>;
+  const years = papers.map((p) => p.y);
+  return {
+    ...s,
+    count: papers.length,
+    from: years.length ? Math.min(...years) : null,
+    to: years.length ? Math.max(...years) : null,
+  };
+});
+---
+
+<Base title="Choose your subjects" spine="#f5c64f">
+  <section class="wrap page-head">
+    <nav class="breadcrumb" aria-label="Breadcrumb">
+      <a href="/">Home</a> <span class="sep">/</span> <span aria-current="page">Choose subjects</span>
+    </nav>
+    <h1>Your subjects</h1>
+    <p class="page-sub">
+      Choose what you study — the homepage will show just those. Saved right in this browser,
+      no account needed, change any time.
+    </p>
+  </section>
+
+  <section class="wrap chooser" data-chooser>
+    <div class="chooser-grid">
+      {items.map((s) => (
+        <button class="choose-card" data-choose-code={s.code} type="button" aria-pressed="false">
+          <span class="choose-swatch" style={`--spine: ${s.color}`}></span>
+          <span class="choose-body">
+            <span class="choose-name">{s.name}</span>
+            <span class="choose-code">{s.code} · {s.count} papers{s.from ? ` · ${s.from}–${s.to}` : ""}</span>
+          </span>
+          <span class="choose-tick" aria-hidden="true">✓</span>
+        </button>
+      ))}
+    </div>
+    <p class="choose-note" data-chooser-note>Nothing selected — we'll show every subject instead.</p>
+    <div class="choose-actions">
+      <a class="btn-primary" href="/">Save &amp; back home</a>
+      <button class="btn-ghost" data-choose-clear type="button">Show all subjects</button>
+    </div>
+  </section>
+</Base>
+
+<script>
+  import { KEYS, loadSet, saveSet } from "../scripts/store";
+
+  const cards = [...document.querySelectorAll<HTMLButtonElement>("[data-choose-code]")];
+  const note = document.querySelector<HTMLElement>("[data-chooser-note]")!;
+
+  function refreshNote() {
+    const count = cards.filter((c) => c.getAttribute("aria-pressed") === "true").length;
+    note.textContent = count
+      ? `${count} subject${count === 1 ? "" : "s"} — the homepage will show just these.`
+      : "Nothing selected — we'll show every subject instead.";
+  }
+
+  const chosen = loadSet(KEYS.chosen);
+  for (const card of cards) {
+    const code = card.dataset.chooseCode!;
+    card.setAttribute("aria-pressed", String(chosen.has(code)));
+    card.addEventListener("click", () => {
+      const nowOn = card.getAttribute("aria-pressed") !== "true";
+      card.setAttribute("aria-pressed", String(nowOn));
+      const live = loadSet(KEYS.chosen);
+      if (nowOn) live.add(code);
+      else live.delete(code);
+      saveSet(KEYS.chosen, live);
+      refreshNote();
+    });
+  }
+  refreshNote();
+
+  // Clear = remove everything that is currently ticked
+  document.querySelector<HTMLButtonElement>("[data-choose-clear]")?.addEventListener("click", () => {
+    saveSet(KEYS.chosen, new Set());
+    for (const card of cards) card.setAttribute("aria-pressed", "false");
+    refreshNote();
+  });
+</script>
